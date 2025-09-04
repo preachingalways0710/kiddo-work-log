@@ -19,7 +19,8 @@ interface Job {
 
 const JobManagement = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newJob, setNewJob] = useState({
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [jobForm, setJobForm] = useState({
     title: '',
     description: '',
     estimatedTime: ''
@@ -54,20 +55,45 @@ const JobManagement = () => {
   ]);
 
   const handleCreateJob = () => {
-    if (newJob.title && newJob.description && newJob.estimatedTime) {
-      const job: Job = {
-        id: Date.now().toString(),
-        title: newJob.title,
-        description: newJob.description,
-        estimatedTime: newJob.estimatedTime,
-        status: 'pending',
-        createdAt: new Date().toISOString().split('T')[0]
-      };
-      setJobs([job, ...jobs]);
-      setNewJob({ title: '', description: '', estimatedTime: '' });
-      setIsDialogOpen(false);
+    if (jobForm.title && jobForm.description && jobForm.estimatedTime) {
+      if (editingJob) {
+        // Update existing job
+        setJobs(jobs.map(job => 
+          job.id === editingJob.id 
+            ? { ...job, title: jobForm.title, description: jobForm.description, estimatedTime: jobForm.estimatedTime }
+            : job
+        ));
+      } else {
+        // Create new job
+        const job: Job = {
+          id: Date.now().toString(),
+          title: jobForm.title,
+          description: jobForm.description,
+          estimatedTime: jobForm.estimatedTime,
+          status: 'pending',
+          createdAt: new Date().toISOString().split('T')[0]
+        };
+        setJobs([job, ...jobs]);
+      }
+      resetForm();
       // Here you would save to Supabase
     }
+  };
+
+  const handleEditJob = (job: Job) => {
+    setEditingJob(job);
+    setJobForm({
+      title: job.title,
+      description: job.description,
+      estimatedTime: job.estimatedTime
+    });
+    setIsDialogOpen(true);
+  };
+
+  const resetForm = () => {
+    setJobForm({ title: '', description: '', estimatedTime: '' });
+    setEditingJob(null);
+    setIsDialogOpen(false);
   };
 
   const handleDeleteJob = (id: string) => {
@@ -114,25 +140,25 @@ const JobManagement = () => {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Create New Job</DialogTitle>
+                <DialogTitle>{editingJob ? 'Edit Job' : 'Create New Job'}</DialogTitle>
                 <DialogDescription>
-                  Add a new job for your worker to complete.
+                  {editingJob ? 'Update the job details below.' : 'Add a new job for your worker to complete.'}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-medium">Job Title</label>
                   <Input
-                    value={newJob.title}
-                    onChange={(e) => setNewJob({ ...newJob, title: e.target.value })}
+                    value={jobForm.title}
+                    onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })}
                     placeholder="e.g., Clean the garage"
                   />
                 </div>
                 <div>
                   <label className="text-sm font-medium">Description</label>
                   <Textarea
-                    value={newJob.description}
-                    onChange={(e) => setNewJob({ ...newJob, description: e.target.value })}
+                    value={jobForm.description}
+                    onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
                     placeholder="Detailed description of what needs to be done"
                     rows={3}
                   />
@@ -140,22 +166,22 @@ const JobManagement = () => {
                 <div>
                   <label className="text-sm font-medium">Estimated Time</label>
                   <Input
-                    value={newJob.estimatedTime}
-                    onChange={(e) => setNewJob({ ...newJob, estimatedTime: e.target.value })}
+                    value={jobForm.estimatedTime}
+                    onChange={(e) => setJobForm({ ...jobForm, estimatedTime: e.target.value })}
                     placeholder="e.g., 2 hours, 45 minutes"
                   />
                 </div>
                 <div className="flex gap-2 pt-4">
                   <Button
                     onClick={handleCreateJob}
-                    disabled={!newJob.title || !newJob.description || !newJob.estimatedTime}
+                    disabled={!jobForm.title || !jobForm.description || !jobForm.estimatedTime}
                     className="flex-1 bg-gradient-to-r from-primary to-primary/80"
                   >
-                    Create Job
+                    {editingJob ? 'Update Job' : 'Create Job'}
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => setIsDialogOpen(false)}
+                    onClick={resetForm}
                   >
                     Cancel
                   </Button>
@@ -190,7 +216,7 @@ const JobManagement = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => {/* Handle edit */}}
+                      onClick={() => handleEditJob(job)}
                     >
                       <Edit className="w-4 h-4" />
                     </Button>
