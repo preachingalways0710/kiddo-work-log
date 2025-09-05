@@ -1,17 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Clock, CheckCircle, PlayCircle, PauseCircle, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface Job {
   id: string;
   title: string;
-  description: string;
-  estimatedTime: string;
-  status: 'pending' | 'in-progress' | 'completed';
+  description: string | null;
+  estimated_time: number; // in minutes
+  status: 'pending' | 'in_progress' | 'completed';
 }
 
 const WorkerDashboard = () => {
@@ -19,52 +21,127 @@ const WorkerDashboard = () => {
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [workDescription, setWorkDescription] = useState('');
   const [startTime, setStartTime] = useState<Date | null>(null);
+  const [availableJobs, setAvailableJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  // Mock data - will be replaced with Supabase data
-  const [availableJobs] = useState<Job[]>([
-    {
-      id: '1',
-      title: 'Clean the garage',
-      description: 'Organize tools and sweep the floor',
-      estimatedTime: '2 hours',
-      status: 'pending'
-    },
-    {
-      id: '2',
-      title: 'Yard work',
-      description: 'Rake leaves and trim bushes',
-      estimatedTime: '1.5 hours',
-      status: 'pending'
-    },
-    {
-      id: '3',
-      title: 'Wash car',
-      description: 'Wash and vacuum the family car',
-      estimatedTime: '45 minutes',
-      status: 'pending'
+  useEffect(() => {
+    fetchAvailableJobs();
+  }, []);
+
+  const fetchAvailableJobs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setAvailableJobs((data || []).map(job => ({
+        ...job,
+        status: job.status as 'pending' | 'in_progress' | 'completed'
+      })));
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load available jobs",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
-  ]);
-
-  const handleCheckIn = (job: Job) => {
-    setCurrentJob(job);
-    setIsWorking(true);
-    setStartTime(new Date());
-    setWorkDescription('');
   };
 
-  const handleCheckOut = () => {
-    if (workDescription.trim()) {
-      // Here you would save to Supabase
-      console.log('Work completed:', {
-        job: currentJob,
-        description: workDescription,
-        startTime,
-        endTime: new Date()
-      });
-      setIsWorking(false);
-      setCurrentJob(null);
+  const formatMinutesToTime = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    
+    if (hours > 0 && remainingMinutes > 0) {
+      return `${hours}h ${remainingMinutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h`;
+    } else {
+      return `${remainingMinutes}m`;
+    }
+  };
+
+  const handleCheckIn = async (job: Job) => {
+    try {
+      // Update job status to in_progress
+      const { error } = await supabase
+        .from('jobs')
+        .update({ status: 'in_progress' })
+        .eq('id', job.id);
+
+      if (error) throw error;
+
+      setCurrentJob(job);
+      setIsWorking(true);
+      setStartTime(new Date());
       setWorkDescription('');
-      setStartTime(null);
+      
+      toast({
+        title: "Started working",
+        description: `Started working on: ${job.title}`
+      });
+    } catch (error) {
+      console.error('Error starting job:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start job",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (workDescription.trim() && currentJob && startTime) {
+      const endTime = new Date();
+      const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+
+      try {
+        // Create work session record
+        const { error: sessionError } = await supabase
+          .from('work_sessions')
+          .insert({
+            job_id: currentJob.id,
+            job_title: currentJob.title,
+            start_time: startTime.toISOString(),
+            end_time: endTime.toISOString(),
+            description: workDescription,
+            duration: durationMinutes
+          });
+
+        if (sessionError) throw sessionError;
+
+        // Update job status to completed
+        const { error: jobError } = await supabase
+          .from('jobs')
+          .update({ status: 'completed' })
+          .eq('id', currentJob.id);
+
+        if (jobError) throw jobError;
+
+        toast({
+          title: "Job completed!",
+          description: `Successfully completed: ${currentJob.title}`
+        });
+
+        setIsWorking(false);
+        setCurrentJob(null);
+        setWorkDescription('');
+        setStartTime(null);
+        fetchAvailableJobs(); // Refresh the job list
+      } catch (error) {
+        console.error('Error completing job:', error);
+        toast({
+          title: "Error",
+          description: "Failed to complete job",
+          variant: "destructive"
+        });
+      }
     }
   };
 
@@ -103,7 +180,7 @@ const WorkerDashboard = () => {
                     <p className="text-muted-foreground">{currentJob?.description}</p>
                     <Badge variant="secondary" className="mt-2">
                       <Clock className="w-3 h-3 mr-1" />
-                      {currentJob?.estimatedTime}
+                      {currentJob ? formatMinutesToTime(currentJob.estimated_time) : ''}
                     </Badge>
                   </div>
                   <div>
@@ -140,31 +217,41 @@ const WorkerDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="grid gap-4">
-                  {availableJobs.map((job) => (
-                    <Card key={job.id} className="relative">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-semibold">{job.title}</h3>
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {job.description}
-                            </p>
-                            <Badge variant="outline">
-                              <Clock className="w-3 h-3 mr-1" />
-                              {job.estimatedTime}
-                            </Badge>
+                  {loading ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">Loading available jobs...</p>
+                    </div>
+                  ) : availableJobs.length === 0 ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">No jobs available right now.</p>
+                    </div>
+                  ) : (
+                    availableJobs.map((job) => (
+                      <Card key={job.id} className="relative">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h3 className="font-semibold">{job.title}</h3>
+                              <p className="text-sm text-muted-foreground mb-2">
+                                {job.description}
+                              </p>
+                              <Badge variant="outline">
+                                <Clock className="w-3 h-3 mr-1" />
+                                {formatMinutesToTime(job.estimated_time)}
+                              </Badge>
+                            </div>
+                            <Button
+                              onClick={() => handleCheckIn(job)}
+                              className="bg-gradient-to-r from-primary to-primary/80"
+                            >
+                              <PlayCircle className="w-4 h-4 mr-2" />
+                              Start Job
+                            </Button>
                           </div>
-                          <Button
-                            onClick={() => handleCheckIn(job)}
-                            className="bg-gradient-to-r from-primary to-primary/80"
-                          >
-                            <PlayCircle className="w-4 h-4 mr-2" />
-                            Start Job
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -7,14 +7,16 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ArrowLeft, Plus, Clock, Trash2, Edit } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface Job {
   id: string;
   title: string;
-  description: string;
-  estimatedTime: string;
-  status: 'pending' | 'in-progress' | 'completed';
-  createdAt: string;
+  description: string | null;
+  estimated_time: number; // in minutes
+  status: 'pending' | 'in_progress' | 'completed';
+  created_at: string;
 }
 
 const JobManagement = () => {
@@ -25,58 +27,87 @@ const JobManagement = () => {
     description: '',
     estimatedTime: ''
   });
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  // Mock data - will be replaced with Supabase data
-  const [jobs, setJobs] = useState<Job[]>([
-    {
-      id: '1',
-      title: 'Clean the garage',
-      description: 'Organize tools and sweep the floor',
-      estimatedTime: '2 hours',
-      status: 'pending',
-      createdAt: '2024-01-15'
-    },
-    {
-      id: '2',
-      title: 'Yard work',
-      description: 'Rake leaves and trim bushes',
-      estimatedTime: '1.5 hours',
-      status: 'pending',
-      createdAt: '2024-01-14'
-    },
-    {
-      id: '3',
-      title: 'Wash car',
-      description: 'Wash and vacuum the family car',
-      estimatedTime: '45 minutes',
-      status: 'completed',
-      createdAt: '2024-01-13'
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const fetchJobs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setJobs((data || []).map(job => ({
+        ...job,
+        status: job.status as 'pending' | 'in_progress' | 'completed'
+      })));
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load jobs",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
 
-  const handleCreateJob = () => {
+  const handleCreateJob = async () => {
     if (jobForm.title && jobForm.description && jobForm.estimatedTime) {
-      if (editingJob) {
-        // Update existing job
-        setJobs(jobs.map(job => 
-          job.id === editingJob.id 
-            ? { ...job, title: jobForm.title, description: jobForm.description, estimatedTime: jobForm.estimatedTime }
-            : job
-        ));
-      } else {
-        // Create new job
-        const job: Job = {
-          id: Date.now().toString(),
-          title: jobForm.title,
-          description: jobForm.description,
-          estimatedTime: jobForm.estimatedTime,
-          status: 'pending',
-          createdAt: new Date().toISOString().split('T')[0]
-        };
-        setJobs([job, ...jobs]);
+      const estimatedMinutes = parseTimeToMinutes(jobForm.estimatedTime);
+      
+      try {
+        if (editingJob) {
+          // Update existing job
+          const { error } = await supabase
+            .from('jobs')
+            .update({
+              title: jobForm.title,
+              description: jobForm.description,
+              estimated_time: estimatedMinutes
+            })
+            .eq('id', editingJob.id);
+
+          if (error) throw error;
+          toast({
+            title: "Success",
+            description: "Job updated successfully"
+          });
+        } else {
+          // Create new job
+          const { error } = await supabase
+            .from('jobs')
+            .insert({
+              title: jobForm.title,
+              description: jobForm.description,
+              estimated_time: estimatedMinutes,
+              status: 'pending'
+            });
+
+          if (error) throw error;
+          toast({
+            title: "Success",
+            description: "Job created successfully"
+          });
+        }
+        
+        resetForm();
+        fetchJobs();
+      } catch (error) {
+        console.error('Error saving job:', error);
+        toast({
+          title: "Error",
+          description: "Failed to save job",
+          variant: "destructive"
+        });
       }
-      resetForm();
-      // Here you would save to Supabase
     }
   };
 
@@ -84,8 +115,8 @@ const JobManagement = () => {
     setEditingJob(job);
     setJobForm({
       title: job.title,
-      description: job.description,
-      estimatedTime: job.estimatedTime
+      description: job.description || '',
+      estimatedTime: formatMinutesToTime(job.estimated_time)
     });
     setIsDialogOpen(true);
   };
@@ -96,16 +127,60 @@ const JobManagement = () => {
     setIsDialogOpen(false);
   };
 
-  const handleDeleteJob = (id: string) => {
-    setJobs(jobs.filter(job => job.id !== id));
-    // Here you would delete from Supabase
+  const handleDeleteJob = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      toast({
+        title: "Success",
+        description: "Job deleted successfully"
+      });
+      fetchJobs();
+    } catch (error) {
+      console.error('Error deleting job:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete job",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Helper functions
+  const parseTimeToMinutes = (timeStr: string): number => {
+    const hours = timeStr.match(/(\d+(?:\.\d+)?)\s*h/i);
+    const minutes = timeStr.match(/(\d+)\s*m/i);
+    
+    let totalMinutes = 0;
+    if (hours) totalMinutes += parseFloat(hours[1]) * 60;
+    if (minutes) totalMinutes += parseInt(minutes[1]);
+    
+    return totalMinutes || 60; // Default to 60 minutes if parsing fails
+  };
+
+  const formatMinutesToTime = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    
+    if (hours > 0 && remainingMinutes > 0) {
+      return `${hours}h ${remainingMinutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h`;
+    } else {
+      return `${remainingMinutes}m`;
+    }
   };
 
   const getStatusColor = (status: Job['status']) => {
     switch (status) {
       case 'pending':
         return 'bg-warning/10 text-warning border-warning/20';
-      case 'in-progress':
+      case 'in_progress':
         return 'bg-primary/10 text-primary border-primary/20';
       case 'completed':
         return 'bg-success/10 text-success border-success/20';
@@ -192,7 +267,13 @@ const JobManagement = () => {
         </div>
 
         <div className="grid gap-4">
-          {jobs.map((job) => (
+          {loading ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <p className="text-muted-foreground">Loading jobs...</p>
+              </CardContent>
+            </Card>
+          ) : jobs.map((job) => (
             <Card key={job.id}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
@@ -200,16 +281,16 @@ const JobManagement = () => {
                     <div className="flex items-center gap-3">
                       <h3 className="font-semibold text-lg">{job.title}</h3>
                       <Badge className={getStatusColor(job.status)}>
-                        {job.status.replace('-', ' ')}
+                        {job.status.replace('_', ' ')}
                       </Badge>
                     </div>
                     <p className="text-muted-foreground">{job.description}</p>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {job.estimatedTime}
+                        {formatMinutesToTime(job.estimated_time)}
                       </div>
-                      <span>Created: {new Date(job.createdAt).toLocaleDateString()}</span>
+                      <span>Created: {new Date(job.created_at).toLocaleDateString()}</span>
                     </div>
                   </div>
                   <div className="flex gap-2">
