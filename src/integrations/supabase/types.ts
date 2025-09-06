@@ -16,28 +16,34 @@ export type Database = {
     Tables: {
       jobs: {
         Row: {
+          assigned_days: string[] | null
           created_at: string
           description: string | null
           estimated_time: number
           id: string
+          priority: string
           status: string
           title: string
           updated_at: string
         }
         Insert: {
+          assigned_days?: string[] | null
           created_at?: string
           description?: string | null
           estimated_time: number
           id?: string
+          priority?: string
           status?: string
           title: string
           updated_at?: string
         }
         Update: {
+          assigned_days?: string[] | null
           created_at?: string
           description?: string | null
           estimated_time?: number
           id?: string
+          priority?: string
           status?: string
           title?: string
           updated_at?: string

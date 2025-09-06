@@ -5,7 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { ArrowLeft, Plus, Clock, Trash2, Edit } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ArrowLeft, Plus, Clock, Trash2, Edit, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +18,8 @@ interface Job {
   description: string | null;
   estimated_time: number; // in minutes
   status: 'pending' | 'in_progress' | 'completed';
+  priority: 'high' | 'medium' | 'low';
+  assigned_days: string[];
   created_at: string;
 }
 
@@ -25,7 +29,9 @@ const JobManagement = () => {
   const [jobForm, setJobForm] = useState({
     title: '',
     description: '',
-    estimatedTime: ''
+    estimatedTime: '',
+    priority: 'medium' as 'high' | 'medium' | 'low',
+    assigned_days: [] as string[]
   });
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,11 +47,21 @@ const JobManagement = () => {
         .from('jobs')
         .select('*')
         .order('created_at', { ascending: false });
+      
+      // Sort by priority: high -> medium -> low
+      const priorityOrder = { 'high': 0, 'medium': 1, 'low': 2 };
+      const sortedData = (data || []).sort((a, b) => {
+        const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] ?? 3;
+        const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] ?? 3;
+        return aPriority - bPriority;
+      });
 
       if (error) throw error;
-      setJobs((data || []).map(job => ({
+      setJobs(sortedData.map(job => ({
         ...job,
-        status: job.status as 'pending' | 'in_progress' | 'completed'
+        status: job.status as 'pending' | 'in_progress' | 'completed',
+        priority: job.priority as 'high' | 'medium' | 'low',
+        assigned_days: job.assigned_days || []
       })));
     } catch (error) {
       console.error('Error fetching jobs:', error);
@@ -60,7 +76,7 @@ const JobManagement = () => {
   };
 
   const handleCreateJob = async () => {
-    if (jobForm.title && jobForm.description && jobForm.estimatedTime) {
+    if (jobForm.title && jobForm.estimatedTime) {
       const estimatedMinutes = parseTimeToMinutes(jobForm.estimatedTime);
       
       try {
@@ -70,8 +86,10 @@ const JobManagement = () => {
             .from('jobs')
             .update({
               title: jobForm.title,
-              description: jobForm.description,
-              estimated_time: estimatedMinutes
+              description: jobForm.description || null,
+              estimated_time: estimatedMinutes,
+              priority: jobForm.priority,
+              assigned_days: jobForm.assigned_days
             })
             .eq('id', editingJob.id);
 
@@ -86,9 +104,11 @@ const JobManagement = () => {
             .from('jobs')
             .insert({
               title: jobForm.title,
-              description: jobForm.description,
+              description: jobForm.description || null,
               estimated_time: estimatedMinutes,
-              status: 'pending'
+              status: 'pending',
+              priority: jobForm.priority,
+              assigned_days: jobForm.assigned_days
             });
 
           if (error) throw error;
@@ -116,13 +136,15 @@ const JobManagement = () => {
     setJobForm({
       title: job.title,
       description: job.description || '',
-      estimatedTime: formatMinutesToTime(job.estimated_time)
+      estimatedTime: formatMinutesToTime(job.estimated_time),
+      priority: job.priority,
+      assigned_days: job.assigned_days
     });
     setIsDialogOpen(true);
   };
 
   const resetForm = () => {
-    setJobForm({ title: '', description: '', estimatedTime: '' });
+    setJobForm({ title: '', description: '', estimatedTime: '', priority: 'medium', assigned_days: [] });
     setEditingJob(null);
     setIsDialogOpen(false);
   };
@@ -189,6 +211,29 @@ const JobManagement = () => {
     }
   };
 
+  const getPriorityColor = (priority: Job['priority']) => {
+    switch (priority) {
+      case 'high':
+        return 'bg-destructive/10 text-destructive border-destructive/20';
+      case 'medium':
+        return 'bg-warning/10 text-warning border-warning/20';
+      case 'low':
+        return 'bg-success/10 text-success border-success/20';
+      default:
+        return 'bg-muted text-muted-foreground';
+    }
+  };
+
+  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  const handleDayToggle = (day: string, checked: boolean) => {
+    if (checked) {
+      setJobForm({ ...jobForm, assigned_days: [...jobForm.assigned_days, day] });
+    } else {
+      setJobForm({ ...jobForm, assigned_days: jobForm.assigned_days.filter(d => d !== day) });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-4xl mx-auto">
@@ -230,13 +275,56 @@ const JobManagement = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium">Description</label>
+                  <label className="text-sm font-medium">Description (Optional)</label>
                   <Textarea
                     value={jobForm.description}
                     onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
-                    placeholder="Detailed description of what needs to be done"
+                    placeholder="Detailed description of what needs to be done (optional)"
                     rows={3}
                   />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Priority</label>
+                  <Select value={jobForm.priority} onValueChange={(value: 'high' | 'medium' | 'low') => setJobForm({ ...jobForm, priority: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="high">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-destructive" />
+                          High Priority
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="medium">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-warning" />
+                          Medium Priority
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="low">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-success" />
+                          Low Priority
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Assigned Days</label>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    {daysOfWeek.map((day) => (
+                      <div key={day} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={day}
+                          checked={jobForm.assigned_days.includes(day)}
+                          onCheckedChange={(checked) => handleDayToggle(day, checked as boolean)}
+                        />
+                        <label htmlFor={day} className="text-sm">{day}</label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <label className="text-sm font-medium">Estimated Time</label>
@@ -249,7 +337,7 @@ const JobManagement = () => {
                 <div className="flex gap-2 pt-4">
                   <Button
                     onClick={handleCreateJob}
-                    disabled={!jobForm.title || !jobForm.description || !jobForm.estimatedTime}
+                    disabled={!jobForm.title || !jobForm.estimatedTime}
                     className="flex-1 bg-gradient-to-r from-primary to-primary/80"
                   >
                     {editingJob ? 'Update Job' : 'Create Job'}
@@ -283,8 +371,20 @@ const JobManagement = () => {
                       <Badge className={getStatusColor(job.status)}>
                         {job.status.replace('_', ' ')}
                       </Badge>
+                      <Badge className={getPriorityColor(job.priority)}>
+                        {job.priority} priority
+                      </Badge>
                     </div>
-                    <p className="text-muted-foreground">{job.description}</p>
+                    <p className="text-muted-foreground">{job.description || 'No description provided'}</p>
+                    {job.assigned_days.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {job.assigned_days.map((day) => (
+                          <Badge key={day} variant="outline" className="text-xs">
+                            {day.slice(0, 3)}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />

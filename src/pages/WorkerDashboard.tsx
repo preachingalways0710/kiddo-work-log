@@ -14,6 +14,8 @@ interface Job {
   description: string | null;
   estimated_time: number; // in minutes
   status: 'pending' | 'in_progress' | 'completed';
+  priority: 'high' | 'medium' | 'low';
+  assigned_days: string[];
 }
 
 const WorkerDashboard = () => {
@@ -36,11 +38,21 @@ const WorkerDashboard = () => {
         .select('*')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
+      
+      // Sort by priority: high -> medium -> low
+      const priorityOrder = { 'high': 0, 'medium': 1, 'low': 2 };
+      const sortedData = (data || []).sort((a, b) => {
+        const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] ?? 3;
+        const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] ?? 3;
+        return aPriority - bPriority;
+      });
 
       if (error) throw error;
-      setAvailableJobs((data || []).map(job => ({
+      setAvailableJobs(sortedData.map(job => ({
         ...job,
-        status: job.status as 'pending' | 'in_progress' | 'completed'
+        status: job.status as 'pending' | 'in_progress' | 'completed',
+        priority: job.priority as 'high' | 'medium' | 'low',
+        assigned_days: job.assigned_days || []
       })));
     } catch (error) {
       console.error('Error fetching jobs:', error);
@@ -64,6 +76,19 @@ const WorkerDashboard = () => {
       return `${hours}h`;
     } else {
       return `${remainingMinutes}m`;
+    }
+  };
+
+  const getPriorityColor = (priority: Job['priority']) => {
+    switch (priority) {
+      case 'high':
+        return 'bg-destructive/10 text-destructive border-destructive/20';
+      case 'medium':
+        return 'bg-warning/10 text-warning border-warning/20';
+      case 'low':
+        return 'bg-success/10 text-success border-success/20';
+      default:
+        return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -176,12 +201,30 @@ const WorkerDashboard = () => {
               <CardContent>
                 <div className="space-y-4">
                   <div>
-                    <h3 className="font-semibold text-lg">{currentJob?.title}</h3>
-                    <p className="text-muted-foreground">{currentJob?.description}</p>
-                    <Badge variant="secondary" className="mt-2">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {currentJob ? formatMinutesToTime(currentJob.estimated_time) : ''}
-                    </Badge>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h3 className="font-semibold text-lg">{currentJob?.title}</h3>
+                      {currentJob && (
+                        <Badge className={getPriorityColor(currentJob.priority)}>
+                          {currentJob.priority} priority
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground">{currentJob?.description || 'No description provided'}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Badge variant="secondary">
+                        <Clock className="w-3 h-3 mr-1" />
+                        {currentJob ? formatMinutesToTime(currentJob.estimated_time) : ''}
+                      </Badge>
+                      {currentJob && currentJob.assigned_days.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {currentJob.assigned_days.map((day) => (
+                            <Badge key={day} variant="outline" className="text-xs">
+                              {day.slice(0, 3)}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">
@@ -231,14 +274,30 @@ const WorkerDashboard = () => {
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h3 className="font-semibold">{job.title}</h3>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="font-semibold">{job.title}</h3>
+                                <Badge className={getPriorityColor(job.priority)}>
+                                  {job.priority}
+                                </Badge>
+                              </div>
                               <p className="text-sm text-muted-foreground mb-2">
-                                {job.description}
+                                {job.description || 'No description provided'}
                               </p>
-                              <Badge variant="outline">
-                                <Clock className="w-3 h-3 mr-1" />
-                                {formatMinutesToTime(job.estimated_time)}
-                              </Badge>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline">
+                                  <Clock className="w-3 h-3 mr-1" />
+                                  {formatMinutesToTime(job.estimated_time)}
+                                </Badge>
+                                {job.assigned_days.length > 0 && (
+                                  <>
+                                    {job.assigned_days.map((day) => (
+                                      <Badge key={day} variant="outline" className="text-xs">
+                                        {day.slice(0, 3)}
+                                      </Badge>
+                                    ))}
+                                  </>
+                                )}
+                              </div>
                             </div>
                             <Button
                               onClick={() => handleCheckIn(job)}
