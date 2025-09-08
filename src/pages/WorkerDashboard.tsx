@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Clock, CheckCircle, PlayCircle, PauseCircle, ArrowLeft } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Clock, CheckCircle, PlayCircle, PauseCircle, ArrowLeft, UserCheck, UserX } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +17,18 @@ interface Job {
   status: 'pending' | 'in_progress' | 'completed';
   priority: 'high' | 'medium' | 'low';
   assigned_days: string[];
+  category: 'active' | 'later';
+  display_order: number;
+}
+
+interface AttendanceRecord {
+  id: string;
+  worker_name: string;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  date: string;
+  is_late_check_in: boolean;
+  is_early_check_out: boolean;
 }
 
 const WorkerDashboard = () => {
@@ -25,11 +38,44 @@ const WorkerDashboard = () => {
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [availableJobs, setAvailableJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [workerName, setWorkerName] = useState('');
+  const [isCheckedIn, setIsCheckedIn] = useState(false);
+  const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchAvailableJobs();
+    checkTodayAttendance();
+    
+    // Get worker name from localStorage or prompt
+    const savedName = localStorage.getItem('workerName');
+    if (savedName) {
+      setWorkerName(savedName);
+    }
   }, []);
+
+  const checkTodayAttendance = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const savedName = localStorage.getItem('workerName') || 'Worker';
+      
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('date', today)
+        .eq('worker_name', savedName)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      if (data) {
+        setTodayAttendance(data);
+        setIsCheckedIn(!!data.check_in_time && !data.check_out_time);
+      }
+    } catch (error) {
+      console.error('Error checking today attendance:', error);
+    }
+  };
 
   const fetchAvailableJobs = async () => {
     try {
@@ -37,22 +83,18 @@ const WorkerDashboard = () => {
         .from('jobs')
         .select('*')
         .eq('status', 'pending')
+        .eq('category', 'active')
+        .order('display_order', { ascending: true })
         .order('created_at', { ascending: false });
-      
-      // Sort by priority: high -> medium -> low
-      const priorityOrder = { 'high': 0, 'medium': 1, 'low': 2 };
-      const sortedData = (data || []).sort((a, b) => {
-        const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] ?? 3;
-        const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] ?? 3;
-        return aPriority - bPriority;
-      });
 
       if (error) throw error;
-      setAvailableJobs(sortedData.map(job => ({
+      setAvailableJobs((data || []).map(job => ({
         ...job,
         status: job.status as 'pending' | 'in_progress' | 'completed',
         priority: job.priority as 'high' | 'medium' | 'low',
-        assigned_days: job.assigned_days || []
+        assigned_days: job.assigned_days || [],
+        category: (job.category as 'active' | 'later') || 'active',
+        display_order: job.display_order || 0
       })));
     } catch (error) {
       console.error('Error fetching jobs:', error);
@@ -92,7 +134,105 @@ const WorkerDashboard = () => {
     }
   };
 
-  const handleCheckIn = async (job: Job) => {
+  const handleCheckIn = async () => {
+    if (!workerName.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter your name first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const now = new Date();
+      const checkInTime = now.toISOString();
+      const today = now.toISOString().split('T')[0];
+      const isLate = now.getHours() > 16; // After 4 PM
+
+      localStorage.setItem('workerName', workerName);
+
+      const { data, error } = await supabase
+        .from('attendance')
+        .upsert({
+          worker_name: workerName,
+          date: today,
+          check_in_time: checkInTime,
+          is_late_check_in: isLate
+        }, {
+          onConflict: 'worker_name,date'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setTodayAttendance(data);
+      setIsCheckedIn(true);
+      
+      toast({
+        title: isLate ? "Checked in (Late)" : "Checked in",
+        description: isLate ? "Note: Check-in after 4 PM" : `Checked in at ${now.toLocaleTimeString()}`,
+        variant: isLate ? "destructive" : "default"
+      });
+    } catch (error) {
+      console.error('Error checking in:', error);
+      toast({
+        title: "Error",
+        description: "Failed to check in",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (!todayAttendance || !isCheckedIn) return;
+
+    try {
+      const now = new Date();
+      const checkOutTime = now.toISOString();
+      const isEarly = now.getHours() < 18; // Before 6 PM
+
+      const { data, error } = await supabase
+        .from('attendance')
+        .update({
+          check_out_time: checkOutTime,
+          is_early_check_out: isEarly
+        })
+        .eq('id', todayAttendance.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setTodayAttendance(data);
+      setIsCheckedIn(false);
+      
+      toast({
+        title: isEarly ? "Checked out (Early)" : "Checked out",
+        description: isEarly ? "Note: Check-out before 6 PM" : `Checked out at ${now.toLocaleTimeString()}`,
+        variant: isEarly ? "destructive" : "default"
+      });
+    } catch (error) {
+      console.error('Error checking out:', error);
+      toast({
+        title: "Error",
+        description: "Failed to check out",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleStartJob = async (job: Job) => {
+    if (!isCheckedIn) {
+      toast({
+        title: "Error",
+        description: "You must check in first before starting a job",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       // Update job status to in_progress
       const { error } = await supabase
@@ -121,7 +261,7 @@ const WorkerDashboard = () => {
     }
   };
 
-  const handleCheckOut = async () => {
+  const handleCompleteJob = async () => {
     if (workDescription.trim() && currentJob && startTime) {
       const endTime = new Date();
       const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
@@ -182,9 +322,82 @@ const WorkerDashboard = () => {
           </Link>
           <div>
             <h1 className="text-3xl font-bold">Work Dashboard</h1>
-            <p className="text-muted-foreground">Track your work and complete jobs</p>
+            <p className="text-muted-foreground">Check in/out and complete assigned jobs</p>
           </div>
         </div>
+
+        {/* Check-in/Check-out Section */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {isCheckedIn ? (
+                <UserCheck className="w-5 h-5 text-success" />
+              ) : (
+                <UserX className="w-5 h-5 text-muted-foreground" />
+              )}
+              Daily Attendance
+            </CardTitle>
+            <CardDescription>
+              Work hours: 4:00 PM - 6:00 PM
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!workerName && (
+              <div>
+                <label className="text-sm font-medium">Your Name</label>
+                <Input
+                  value={workerName}
+                  onChange={(e) => setWorkerName(e.target.value)}
+                  placeholder="Enter your name"
+                  className="mt-1"
+                />
+              </div>
+            )}
+            
+            <div className="flex items-center justify-between">
+              <div>
+                {todayAttendance?.check_in_time && (
+                  <p className="text-sm text-muted-foreground">
+                    Checked in: {new Date(todayAttendance.check_in_time).toLocaleTimeString()}
+                    {todayAttendance.is_late_check_in && (
+                      <Badge variant="destructive" className="ml-2">Late</Badge>
+                    )}
+                  </p>
+                )}
+                {todayAttendance?.check_out_time && (
+                  <p className="text-sm text-muted-foreground">
+                    Checked out: {new Date(todayAttendance.check_out_time).toLocaleTimeString()}
+                    {todayAttendance.is_early_check_out && (
+                      <Badge variant="destructive" className="ml-2">Early</Badge>
+                    )}
+                  </p>
+                )}
+              </div>
+              
+              <div className="flex gap-2">
+                {!isCheckedIn ? (
+                  <Button
+                    onClick={handleCheckIn}
+                    disabled={!workerName.trim() || !!todayAttendance?.check_out_time}
+                    className="bg-gradient-to-r from-success to-success/80"
+                  >
+                    <UserCheck className="w-4 h-4 mr-2" />
+                    Check In
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleCheckOut}
+                    variant="outline"
+                    className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                  >
+                    <UserX className="w-4 h-4 mr-2" />
+                    Check Out
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {isWorking ? (
           <div className="space-y-6">
@@ -238,12 +451,12 @@ const WorkerDashboard = () => {
                     />
                   </div>
                   <Button
-                    onClick={handleCheckOut}
+                    onClick={handleCompleteJob}
                     disabled={!workDescription.trim()}
                     className="w-full bg-gradient-to-r from-success to-success/80 hover:from-success/90 hover:to-success/70"
                   >
                     <PauseCircle className="w-4 h-4 mr-2" />
-                    Check Out & Complete Job
+                    Complete Job
                   </Button>
                 </div>
               </CardContent>
@@ -300,7 +513,8 @@ const WorkerDashboard = () => {
                               </div>
                             </div>
                             <Button
-                              onClick={() => handleCheckIn(job)}
+                              onClick={() => handleStartJob(job)}
+                              disabled={!isCheckedIn}
                               className="bg-gradient-to-r from-primary to-primary/80"
                             >
                               <PlayCircle className="w-4 h-4 mr-2" />

@@ -7,10 +7,26 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ArrowLeft, Plus, Clock, Trash2, Edit, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Plus, Clock, Trash2, Edit, AlertCircle, Archive } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { SortableJobItem } from '@/components/SortableJobItem';
 
 interface Job {
   id: string;
@@ -21,6 +37,8 @@ interface Job {
   priority: 'high' | 'medium' | 'low';
   assigned_days: string[];
   created_at: string;
+  category: 'active' | 'later';
+  display_order: number;
 }
 
 const JobManagement = () => {
@@ -37,6 +55,13 @@ const JobManagement = () => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   useEffect(() => {
     fetchJobs();
   }, []);
@@ -46,22 +71,17 @@ const JobManagement = () => {
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
+        .order('display_order', { ascending: true })
         .order('created_at', { ascending: false });
-      
-      // Sort by priority: high -> medium -> low
-      const priorityOrder = { 'high': 0, 'medium': 1, 'low': 2 };
-      const sortedData = (data || []).sort((a, b) => {
-        const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] ?? 3;
-        const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] ?? 3;
-        return aPriority - bPriority;
-      });
 
       if (error) throw error;
-      setJobs(sortedData.map(job => ({
+      setJobs((data || []).map(job => ({
         ...job,
         status: job.status as 'pending' | 'in_progress' | 'completed',
         priority: job.priority as 'high' | 'medium' | 'low',
-        assigned_days: job.assigned_days || []
+        assigned_days: job.assigned_days || [],
+        category: (job.category as 'active' | 'later') || 'active',
+        display_order: job.display_order || 0
       })));
     } catch (error) {
       console.error('Error fetching jobs:', error);
@@ -100,6 +120,7 @@ const JobManagement = () => {
           });
         } else {
           // Create new job
+          const maxOrder = Math.max(0, ...jobs.map(job => job.display_order));
           const { error } = await supabase
             .from('jobs')
             .insert({
@@ -108,7 +129,9 @@ const JobManagement = () => {
               estimated_time: estimatedMinutes,
               status: 'pending',
               priority: jobForm.priority,
-              assigned_days: jobForm.assigned_days
+              assigned_days: jobForm.assigned_days,
+              category: 'active',
+              display_order: maxOrder + 1
             });
 
           if (error) throw error;
@@ -234,6 +257,106 @@ const JobManagement = () => {
     }
   };
 
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      const activeJob = jobs.find(job => job.id === active.id);
+      const overJob = jobs.find(job => job.id === over?.id);
+      
+      if (activeJob && overJob && activeJob.category === overJob.category) {
+        const categoryJobs = jobs.filter(job => job.category === activeJob.category);
+        const oldIndex = categoryJobs.findIndex(job => job.id === active.id);
+        const newIndex = categoryJobs.findIndex(job => job.id === over?.id);
+        
+        const reorderedJobs = arrayMove(categoryJobs, oldIndex, newIndex);
+        
+        // Update display_order and priority based on position
+        const updates = reorderedJobs.map((job, index) => {
+          const priorityMap: { [key: number]: 'high' | 'medium' | 'low' } = {
+            0: 'high',
+            1: index < Math.ceil(reorderedJobs.length / 3) ? 'high' : 'medium',
+            2: 'medium'
+          };
+          
+          const priority = index === 0 ? 'high' : 
+                          index < Math.ceil(reorderedJobs.length / 2) ? 'medium' : 'low';
+          
+          return {
+            id: job.id,
+            display_order: index,
+            priority: priority
+          };
+        });
+
+        // Update local state immediately for better UX
+        setJobs(prevJobs => {
+          const newJobs = [...prevJobs];
+          const updatedJobsMap = new Map(updates.map(u => [u.id, u]));
+          
+          return newJobs.map(job => {
+            const update = updatedJobsMap.get(job.id);
+            if (update) {
+              return { ...job, display_order: update.display_order, priority: update.priority as 'high' | 'medium' | 'low' };
+            }
+            return job;
+          });
+        });
+
+        // Update database
+        try {
+          for (const update of updates) {
+            await supabase
+              .from('jobs')
+              .update({ 
+                display_order: update.display_order,
+                priority: update.priority
+              })
+              .eq('id', update.id);
+          }
+          
+          toast({
+            title: "Success",
+            description: "Job order and priorities updated"
+          });
+        } catch (error) {
+          console.error('Error updating job order:', error);
+          toast({
+            title: "Error",
+            description: "Failed to update job order",
+            variant: "destructive"
+          });
+          // Refresh to get correct state
+          fetchJobs();
+        }
+      }
+    }
+  };
+
+  const handleToggleCategory = async (id: string, newCategory: 'active' | 'later') => {
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ category: newCategory })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      toast({
+        title: "Success",
+        description: `Job moved to ${newCategory}`
+      });
+      fetchJobs();
+    } catch (error) {
+      console.error('Error updating job category:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update job category",
+        variant: "destructive"
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-4xl mx-auto">
@@ -354,67 +477,94 @@ const JobManagement = () => {
           </Dialog>
         </div>
 
-        <div className="grid gap-4">
-          {loading ? (
-            <Card>
-              <CardContent className="p-8 text-center">
-                <p className="text-muted-foreground">Loading jobs...</p>
-              </CardContent>
-            </Card>
-          ) : jobs.map((job) => (
-            <Card key={job.id}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-3">
-                      <h3 className="font-semibold text-lg">{job.title}</h3>
-                      <Badge className={getStatusColor(job.status)}>
-                        {job.status.replace('_', ' ')}
-                      </Badge>
-                      <Badge className={getPriorityColor(job.priority)}>
-                        {job.priority} priority
-                      </Badge>
-                    </div>
-                    <p className="text-muted-foreground">{job.description || 'No description provided'}</p>
-                    {job.assigned_days.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {job.assigned_days.map((day) => (
-                          <Badge key={day} variant="outline" className="text-xs">
-                            {day.slice(0, 3)}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatMinutesToTime(job.estimated_time)}
-                      </div>
-                      <span>Created: {new Date(job.created_at).toLocaleDateString()}</span>
-                    </div>
+        {loading ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">Loading jobs...</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* Active Jobs */}
+            <div className="space-y-4">
+              <h2 className="text-2xl font-semibold">Active Jobs</h2>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={jobs.filter(job => job.category === 'active').map(job => job.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-4">
+                    {jobs
+                      .filter(job => job.category === 'active')
+                      .sort((a, b) => a.display_order - b.display_order)
+                      .map((job) => (
+                        <SortableJobItem
+                          key={job.id}
+                          job={job}
+                          onEdit={handleEditJob}
+                          onDelete={handleDeleteJob}
+                          onToggleCategory={handleToggleCategory}
+                          formatMinutesToTime={formatMinutesToTime}
+                          getStatusColor={getStatusColor}
+                          getPriorityColor={getPriorityColor}
+                        />
+                      ))}
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditJob(job)}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDeleteJob(job.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
+                </SortableContext>
+              </DndContext>
+              
+              {jobs.filter(job => job.category === 'active').length === 0 && (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <p className="text-muted-foreground mb-4">No active jobs.</p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* Later/Someday Jobs */}
+            {jobs.filter(job => job.category === 'later').length > 0 && (
+              <div className="space-y-4 mt-8 pt-8 border-t">
+                <div className="flex items-center gap-2">
+                  <Archive className="w-5 h-5 text-muted-foreground" />
+                  <h2 className="text-2xl font-semibold text-muted-foreground">Later / Someday</h2>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={jobs.filter(job => job.category === 'later').map(job => job.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-4">
+                      {jobs
+                        .filter(job => job.category === 'later')
+                        .sort((a, b) => a.display_order - b.display_order)
+                        .map((job) => (
+                          <SortableJobItem
+                            key={job.id}
+                            job={job}
+                            onEdit={handleEditJob}
+                            onDelete={handleDeleteJob}
+                            onToggleCategory={handleToggleCategory}
+                            formatMinutesToTime={formatMinutesToTime}
+                            getStatusColor={getStatusColor}
+                            getPriorityColor={getPriorityColor}
+                          />
+                        ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              </div>
+            )}
+          </>
+        )}
 
         {jobs.length === 0 && (
           <Card>

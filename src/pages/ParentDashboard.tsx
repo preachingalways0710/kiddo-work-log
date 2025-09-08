@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Clock, CheckCircle, User, Calendar, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Clock, CheckCircle, User, Calendar, TrendingUp, AlertTriangle, UserCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -15,17 +15,32 @@ interface WorkSession {
   duration: number | null; // in minutes
 }
 
+interface AttendanceRecord {
+  id: string;
+  worker_name: string;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  date: string;
+  is_late_check_in: boolean;
+  is_early_check_out: boolean;
+}
+
 const ParentDashboard = () => {
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalHoursThisWeek: '0h 0m',
     jobsCompleted: 0,
-    averageJobTime: '0h 0m'
+    averageJobTime: '0h 0m',
+    punctualityScore: 100,
+    lateCheckIns: 0,
+    earlyCheckOuts: 0
   });
 
   useEffect(() => {
     fetchWorkSessions();
+    fetchAttendanceRecords();
   }, []);
 
   const fetchWorkSessions = async () => {
@@ -40,20 +55,41 @@ const ParentDashboard = () => {
       if (error) throw error;
       
       setWorkSessions(data || []);
-      calculateStats(data || []);
     } catch (error) {
       console.error('Error fetching work sessions:', error);
+    }
+  };
+
+  const fetchAttendanceRecords = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(30); // Last 30 days
+
+      if (error) throw error;
+      
+      setAttendanceRecords(data || []);
+    } catch (error) {
+      console.error('Error fetching attendance records:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateStats = (sessions: WorkSession[]) => {
+  useEffect(() => {
+    if (workSessions.length > 0 && attendanceRecords.length > 0) {
+      calculateStats();
+    }
+  }, [workSessions, attendanceRecords]);
+
+  const calculateStats = () => {
     const now = new Date();
     const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
     weekStart.setHours(0, 0, 0, 0);
 
-    const thisWeekSessions = sessions.filter(session => 
+    const thisWeekSessions = workSessions.filter(session => 
       new Date(session.start_time) >= weekStart
     );
 
@@ -64,10 +100,26 @@ const ParentDashboard = () => {
     const completedJobs = thisWeekSessions.length;
     const avgMinutes = completedJobs > 0 ? Math.round(totalMinutes / completedJobs) : 0;
 
+    // Calculate punctuality stats
+    const thisWeekAttendance = attendanceRecords.filter(record => 
+      new Date(record.date) >= weekStart
+    );
+
+    const lateCheckIns = thisWeekAttendance.filter(record => record.is_late_check_in).length;
+    const earlyCheckOuts = thisWeekAttendance.filter(record => record.is_early_check_out).length;
+    const totalAttendanceDays = thisWeekAttendance.length;
+    
+    const punctualityScore = totalAttendanceDays > 0 
+      ? Math.round(((totalAttendanceDays - lateCheckIns - earlyCheckOuts) / totalAttendanceDays) * 100)
+      : 100;
+
     setStats({
       totalHoursThisWeek: formatMinutesToTime(totalMinutes),
       jobsCompleted: completedJobs,
-      averageJobTime: formatMinutesToTime(avgMinutes)
+      averageJobTime: formatMinutesToTime(avgMinutes),
+      punctualityScore,
+      lateCheckIns,
+      earlyCheckOuts
     });
   };
 
@@ -101,7 +153,7 @@ const ParentDashboard = () => {
         </div>
 
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Hours This Week</CardTitle>
@@ -140,7 +192,64 @@ const ParentDashboard = () => {
               </p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Punctuality Score</CardTitle>
+              <UserCheck className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-primary">{stats.punctualityScore}%</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.lateCheckIns + stats.earlyCheckOuts} violations this week
+              </p>
+            </CardContent>
+          </Card>
         </div>
+
+        {/* Punctuality Tracking */}
+        {stats.lateCheckIns + stats.earlyCheckOuts > 0 && (
+          <Card className="mb-6 border-warning bg-warning/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-warning">
+                <AlertTriangle className="w-5 h-5" />
+                Punctuality Alerts
+              </CardTitle>
+              <CardDescription>
+                Issues requiring attention for performance reviews
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {attendanceRecords
+                  .filter(record => record.is_late_check_in || record.is_early_check_out)
+                  .slice(0, 5)
+                  .map((record) => (
+                    <div key={record.id} className="flex items-center justify-between p-3 bg-background rounded-md border">
+                      <div>
+                        <p className="font-medium">{record.worker_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(record.date).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        {record.is_late_check_in && (
+                          <Badge variant="destructive" className="text-xs">
+                            Late Check-in: {record.check_in_time ? new Date(record.check_in_time).toLocaleTimeString() : 'N/A'}
+                          </Badge>
+                        )}
+                        {record.is_early_check_out && (
+                          <Badge variant="destructive" className="text-xs">
+                            Early Check-out: {record.check_out_time ? new Date(record.check_out_time).toLocaleTimeString() : 'N/A'}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Recent Work Sessions */}
         <Card>

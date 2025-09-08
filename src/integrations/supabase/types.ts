@@ -14,11 +14,49 @@ export type Database = {
   }
   public: {
     Tables: {
+      attendance: {
+        Row: {
+          check_in_time: string | null
+          check_out_time: string | null
+          created_at: string
+          date: string
+          id: string
+          is_early_check_out: boolean | null
+          is_late_check_in: boolean | null
+          updated_at: string
+          worker_name: string
+        }
+        Insert: {
+          check_in_time?: string | null
+          check_out_time?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          is_early_check_out?: boolean | null
+          is_late_check_in?: boolean | null
+          updated_at?: string
+          worker_name: string
+        }
+        Update: {
+          check_in_time?: string | null
+          check_out_time?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          is_early_check_out?: boolean | null
+          is_late_check_in?: boolean | null
+          updated_at?: string
+          worker_name?: string
+        }
+        Relationships: []
+      }
       jobs: {
         Row: {
           assigned_days: string[] | null
+          category: string | null
           created_at: string
           description: string | null
+          display_order: number | null
           estimated_time: number
           id: string
           priority: string
@@ -28,8 +66,10 @@ export type Database = {
         }
         Insert: {
           assigned_days?: string[] | null
+          category?: string | null
           created_at?: string
           description?: string | null
+          display_order?: number | null
           estimated_time: number
           id?: string
           priority?: string
@@ -39,8 +79,10 @@ export type Database = {
         }
         Update: {
           assigned_days?: string[] | null
+          category?: string | null
           created_at?: string
           description?: string | null
+          display_order?: number | null
           estimated_time?: number
           id?: string
           priority?: string
