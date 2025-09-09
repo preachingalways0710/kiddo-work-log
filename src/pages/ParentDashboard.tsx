@@ -153,7 +153,8 @@ const ParentDashboard = () => {
         </div>
 
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        {(workSessions.length > 0 || attendanceRecords.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Hours This Week</CardTitle>
@@ -205,7 +206,8 @@ const ParentDashboard = () => {
               </p>
             </CardContent>
           </Card>
-        </div>
+          </div>
+        )}
 
         {/* Punctuality Tracking */}
         {stats.lateCheckIns + stats.earlyCheckOuts > 0 && (
@@ -271,6 +273,9 @@ const ParentDashboard = () => {
               ) : workSessions.length === 0 ? (
                 <div className="text-center py-8">
                   <p className="text-muted-foreground">No work sessions completed yet.</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Work sessions will appear here after jobs are completed.
+                  </p>
                 </div>
               ) : (
                 workSessions.map((session) => (

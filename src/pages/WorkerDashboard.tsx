@@ -88,7 +88,17 @@ const WorkerDashboard = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setAvailableJobs((data || []).map(job => ({
+      
+      // Get current day name
+      const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+      
+      // Filter jobs for today or jobs without assigned days
+      const filteredJobs = (data || []).filter(job => {
+        const assignedDays = job.assigned_days || [];
+        return assignedDays.length === 0 || assignedDays.includes(today);
+      });
+      
+      setAvailableJobs(filteredJobs.map(job => ({
         ...job,
         status: job.status as 'pending' | 'in_progress' | 'completed',
         priority: job.priority as 'high' | 'medium' | 'low',
@@ -347,7 +357,13 @@ const WorkerDashboard = () => {
                 <label className="text-sm font-medium">Your Name</label>
                 <Input
                   value={workerName}
-                  onChange={(e) => setWorkerName(e.target.value)}
+                  onChange={(e) => {
+                    try {
+                      setWorkerName(e.target.value);
+                    } catch (error) {
+                      console.error('Error updating worker name:', error);
+                    }
+                  }}
                   placeholder="Enter your name"
                   className="mt-1"
                 />
