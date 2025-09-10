@@ -153,7 +153,7 @@ const ParentDashboard = () => {
         </div>
 
         {/* Stats Overview */}
-        {(workSessions.length > 0 && attendanceRecords.length > 0) && (
+        {(workSessions.length > 0 || attendanceRecords.length > 0) && !loading && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
