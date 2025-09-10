@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Clock, CheckCircle, User, Calendar, TrendingUp, AlertTriangle, UserCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { workSessionsService, attendanceService, WorkSession, AttendanceRecord } from '@/services/firebase';
+import { HeaderTrackingBar } from '@/components/HeaderTrackingBar';
 
 const ParentDashboard = () => {
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
@@ -18,6 +19,9 @@ const ParentDashboard = () => {
     lateCheckIns: 0,
     earlyCheckOuts: 0
   });
+  const [presentCount, setPresentCount] = useState(4); // Mock data for tracking
+  const [helpersCount, setHelpersCount] = useState(2); // Mock data for tracking
+  const [searchFilter, setSearchFilter] = useState('');
 
   useEffect(() => {
     fetchWorkSessions();
@@ -117,6 +121,13 @@ const ParentDashboard = () => {
             <p className="text-muted-foreground">Overview of work activity and progress</p>
           </div>
         </div>
+
+        {/* Header Tracking Bar */}
+        <HeaderTrackingBar
+          presentCount={presentCount}
+          helpersCount={helpersCount}
+          onSearchChange={setSearchFilter}
+        />
 
         {/* Stats Overview */}
         {(workSessions.length > 0 || attendanceRecords.length > 0) && !loading && (
@@ -244,7 +255,13 @@ const ParentDashboard = () => {
                   </p>
                 </div>
               ) : (
-                workSessions.map((session) => (
+                workSessions
+                  .filter(session => 
+                    searchFilter === '' || 
+                    session.job_title.toLowerCase().includes(searchFilter.toLowerCase()) ||
+                    session.description?.toLowerCase().includes(searchFilter.toLowerCase())
+                  )
+                  .map((session) => (
                   <Card key={session.id} className="bg-muted/20">
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3">
