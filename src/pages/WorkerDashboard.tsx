@@ -6,30 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Clock, CheckCircle, PlayCircle, PauseCircle, ArrowLeft, UserCheck, UserX } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { jobsService, workSessionsService, attendanceService, Job, AttendanceRecord } from '@/services/firebase';
 import { useToast } from '@/hooks/use-toast';
-
-interface Job {
-  id: string;
-  title: string;
-  description: string | null;
-  estimated_time: number; // in minutes
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'high' | 'medium' | 'low';
-  assigned_days: string[];
-  category: 'active' | 'later';
-  display_order: number;
-}
-
-interface AttendanceRecord {
-  id: string;
-  worker_name: string;
-  check_in_time: string | null;
-  check_out_time: string | null;
-  date: string;
-  is_late_check_in: boolean;
-  is_early_check_out: boolean;
-}
 
 const WorkerDashboard = () => {
   const [isWorking, setIsWorking] = useState(false);
@@ -56,17 +34,8 @@ const WorkerDashboard = () => {
 
   const checkTodayAttendance = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
       const savedName = localStorage.getItem('workerName') || 'Worker';
-      
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('date', today)
-        .eq('worker_name', savedName)
-        .maybeSingle();
-
-      if (error && error.code !== 'PGRST116') throw error;
+      const data = await attendanceService.getTodayRecord(savedName);
       
       if (data) {
         setTodayAttendance(data);
@@ -79,15 +48,7 @@ const WorkerDashboard = () => {
 
   const fetchAvailableJobs = async () => {
     try {
-      const { data, error } = await supabase
-        .from('jobs')
-        .select('*')
-        .eq('status', 'pending')
-        .eq('category', 'active')
-        .order('display_order', { ascending: true })
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const data = await jobsService.getActive();
       
       // Get current day name
       const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
@@ -98,14 +59,7 @@ const WorkerDashboard = () => {
         return assignedDays.length === 0 || assignedDays.includes(today);
       });
       
-      setAvailableJobs(filteredJobs.map(job => ({
-        ...job,
-        status: job.status as 'pending' | 'in_progress' | 'completed',
-        priority: job.priority as 'high' | 'medium' | 'low',
-        assigned_days: job.assigned_days || [],
-        category: (job.category as 'active' | 'later') || 'active',
-        display_order: job.display_order || 0
-      })));
+      setAvailableJobs(filteredJobs);
     } catch (error) {
       console.error('Error fetching jobs:', error);
       toast({
@@ -156,28 +110,19 @@ const WorkerDashboard = () => {
 
     try {
       const now = new Date();
-      const checkInTime = now.toISOString();
-      const today = now.toISOString().split('T')[0];
       const isLate = now.getHours() > 16; // After 4 PM
 
       localStorage.setItem('workerName', workerName);
 
-      const { data, error } = await supabase
-        .from('attendance')
-        .upsert({
-          worker_name: workerName,
-          date: today,
-          check_in_time: checkInTime,
-          is_late_check_in: isLate
-        }, {
-          onConflict: 'worker_name,date'
-        })
-        .select()
-        .single();
+      const recordId = await attendanceService.create({
+        worker_name: workerName,
+        date: new Date(),
+        check_in_time: now,
+        is_late_check_in: isLate
+      });
 
-      if (error) throw error;
-
-      setTodayAttendance(data);
+      const newRecord = await attendanceService.getTodayRecord(workerName);
+      setTodayAttendance(newRecord);
       setIsCheckedIn(true);
       
       toast({
@@ -200,22 +145,17 @@ const WorkerDashboard = () => {
 
     try {
       const now = new Date();
-      const checkOutTime = now.toISOString();
       const isEarly = now.getHours() < 18; // Before 6 PM
 
-      const { data, error } = await supabase
-        .from('attendance')
-        .update({
-          check_out_time: checkOutTime,
+      if (todayAttendance.id) {
+        await attendanceService.update(todayAttendance.id, {
+          check_out_time: now,
           is_early_check_out: isEarly
-        })
-        .eq('id', todayAttendance.id)
-        .select()
-        .single();
+        });
+      }
 
-      if (error) throw error;
-
-      setTodayAttendance(data);
+      const updatedRecord = await attendanceService.getTodayRecord(workerName);
+      setTodayAttendance(updatedRecord);
       setIsCheckedIn(false);
       
       toast({
@@ -245,12 +185,9 @@ const WorkerDashboard = () => {
 
     try {
       // Update job status to in_progress
-      const { error } = await supabase
-        .from('jobs')
-        .update({ status: 'in_progress' })
-        .eq('id', job.id);
-
-      if (error) throw error;
+      if (job.id) {
+        await jobsService.update(job.id, { status: 'in_progress' });
+      }
 
       setCurrentJob(job);
       setIsWorking(true);
@@ -278,26 +215,19 @@ const WorkerDashboard = () => {
 
       try {
         // Create work session record
-        const { error: sessionError } = await supabase
-          .from('work_sessions')
-          .insert({
-            job_id: currentJob.id,
-            job_title: currentJob.title,
-            start_time: startTime.toISOString(),
-            end_time: endTime.toISOString(),
-            description: workDescription,
-            duration: durationMinutes
-          });
-
-        if (sessionError) throw sessionError;
+        await workSessionsService.create({
+          job_id: currentJob.id,
+          job_title: currentJob.title,
+          start_time: startTime,
+          end_time: endTime,
+          description: workDescription,
+          duration: durationMinutes
+        });
 
         // Update job status to completed
-        const { error: jobError } = await supabase
-          .from('jobs')
-          .update({ status: 'completed' })
-          .eq('id', currentJob.id);
-
-        if (jobError) throw jobError;
+        if (currentJob.id) {
+          await jobsService.update(currentJob.id, { status: 'completed' });
+        }
 
         toast({
           title: "Job completed!",
@@ -368,7 +298,7 @@ const WorkerDashboard = () => {
               <div>
                 {todayAttendance?.check_in_time && (
                   <p className="text-sm text-muted-foreground">
-                    Checked in: {new Date(todayAttendance.check_in_time).toLocaleTimeString()}
+                    Checked in: {todayAttendance.check_in_time.toLocaleTimeString()}
                     {todayAttendance.is_late_check_in && (
                       <Badge variant="destructive" className="ml-2">Late</Badge>
                     )}
@@ -376,7 +306,7 @@ const WorkerDashboard = () => {
                 )}
                 {todayAttendance?.check_out_time && (
                   <p className="text-sm text-muted-foreground">
-                    Checked out: {new Date(todayAttendance.check_out_time).toLocaleTimeString()}
+                    Checked out: {todayAttendance.check_out_time.toLocaleTimeString()}
                     {todayAttendance.is_early_check_out && (
                       <Badge variant="destructive" className="ml-2">Early</Badge>
                     )}
@@ -438,7 +368,7 @@ const WorkerDashboard = () => {
                         <Clock className="w-3 h-3 mr-1" />
                         {currentJob ? formatMinutesToTime(currentJob.estimated_time) : ''}
                       </Badge>
-                      {currentJob && currentJob.assigned_days.length > 0 && (
+                      {currentJob && currentJob.assigned_days && currentJob.assigned_days.length > 0 && (
                         <div className="flex flex-wrap gap-1">
                           {currentJob.assigned_days.map((day) => (
                             <Badge key={day} variant="outline" className="text-xs">
@@ -498,34 +428,32 @@ const WorkerDashboard = () => {
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-semibold">{job.title}</h3>
+                                <h3 className="font-semibold text-lg">{job.title}</h3>
                                 <Badge className={getPriorityColor(job.priority)}>
-                                  {job.priority}
+                                  {job.priority} priority
                                 </Badge>
                               </div>
-                              <p className="text-sm text-muted-foreground mb-2">
-                                {job.description || 'No description provided'}
-                              </p>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Badge variant="outline">
+                              <p className="text-muted-foreground mb-3">{job.description || 'No description provided'}</p>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary">
                                   <Clock className="w-3 h-3 mr-1" />
                                   {formatMinutesToTime(job.estimated_time)}
                                 </Badge>
-                                {job.assigned_days.length > 0 && (
-                                  <>
+                                {job.assigned_days && job.assigned_days.length > 0 && (
+                                  <div className="flex flex-wrap gap-1">
                                     {job.assigned_days.map((day) => (
                                       <Badge key={day} variant="outline" className="text-xs">
                                         {day.slice(0, 3)}
                                       </Badge>
                                     ))}
-                                  </>
+                                  </div>
                                 )}
                               </div>
                             </div>
                             <Button
                               onClick={() => handleStartJob(job)}
                               disabled={!isCheckedIn}
-                              className="bg-gradient-to-r from-primary to-primary/80"
+                              className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
                             >
                               <PlayCircle className="w-4 h-4 mr-2" />
                               Start Job

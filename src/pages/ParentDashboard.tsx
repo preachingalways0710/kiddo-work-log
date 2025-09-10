@@ -4,26 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Clock, CheckCircle, User, Calendar, TrendingUp, AlertTriangle, UserCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-
-interface WorkSession {
-  id: string;
-  job_title: string;
-  start_time: string;
-  end_time: string | null;
-  description: string | null;
-  duration: number | null; // in minutes
-}
-
-interface AttendanceRecord {
-  id: string;
-  worker_name: string;
-  check_in_time: string | null;
-  check_out_time: string | null;
-  date: string;
-  is_late_check_in: boolean;
-  is_early_check_out: boolean;
-}
+import { workSessionsService, attendanceService, WorkSession, AttendanceRecord } from '@/services/firebase';
 
 const ParentDashboard = () => {
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
@@ -45,15 +26,7 @@ const ParentDashboard = () => {
 
   const fetchWorkSessions = async () => {
     try {
-      const { data, error } = await supabase
-        .from('work_sessions')
-        .select('*')
-        .not('end_time', 'is', null)
-        .order('start_time', { ascending: false })
-        .limit(10);
-
-      if (error) throw error;
-      
+      const data = await workSessionsService.getRecent(10);
       setWorkSessions(data || []);
     } catch (error) {
       console.error('Error fetching work sessions:', error);
@@ -62,14 +35,7 @@ const ParentDashboard = () => {
 
   const fetchAttendanceRecords = async () => {
     try {
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .order('date', { ascending: false })
-        .limit(30); // Last 30 days
-
-      if (error) throw error;
-      
+      const data = await attendanceService.getRecent(30);
       setAttendanceRecords(data || []);
     } catch (error) {
       console.error('Error fetching attendance records:', error);
@@ -90,7 +56,7 @@ const ParentDashboard = () => {
     weekStart.setHours(0, 0, 0, 0);
 
     const thisWeekSessions = workSessions.filter(session => 
-      new Date(session.start_time) >= weekStart
+      session.start_time >= weekStart
     );
 
     const totalMinutes = thisWeekSessions.reduce((sum, session) => 
@@ -102,7 +68,7 @@ const ParentDashboard = () => {
 
     // Calculate punctuality stats
     const thisWeekAttendance = attendanceRecords.filter(record => 
-      new Date(record.date) >= weekStart
+      record.date >= weekStart
     );
 
     const lateCheckIns = thisWeekAttendance.filter(record => record.is_late_check_in).length;
@@ -231,18 +197,18 @@ const ParentDashboard = () => {
                       <div>
                         <p className="font-medium">{record.worker_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(record.date).toLocaleDateString()}
+                          {record.date.toLocaleDateString()}
                         </p>
                       </div>
                       <div className="flex gap-2">
                         {record.is_late_check_in && (
                           <Badge variant="destructive" className="text-xs">
-                            Late Check-in: {record.check_in_time ? new Date(record.check_in_time).toLocaleTimeString() : 'N/A'}
+                            Late Check-in: {record.check_in_time ? record.check_in_time.toLocaleTimeString() : 'N/A'}
                           </Badge>
                         )}
                         {record.is_early_check_out && (
                           <Badge variant="destructive" className="text-xs">
-                            Early Check-out: {record.check_out_time ? new Date(record.check_out_time).toLocaleTimeString() : 'N/A'}
+                            Early Check-out: {record.check_out_time ? record.check_out_time.toLocaleTimeString() : 'N/A'}
                           </Badge>
                         )}
                       </div>
@@ -287,12 +253,12 @@ const ParentDashboard = () => {
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
                             <div className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {new Date(session.start_time).toLocaleDateString()}
+                              {session.start_time.toLocaleDateString()}
                             </div>
                             <div className="flex items-center gap-1">
                               <Clock className="w-3 h-3" />
-                              {new Date(session.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
-                              {session.end_time ? new Date(session.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'In Progress'}
+                              {session.start_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - 
+                              {session.end_time ? session.end_time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'In Progress'}
                             </div>
                           </div>
                         </div>

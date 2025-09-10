@@ -66,7 +66,7 @@ const Index = () => {
         <div className="text-center mt-12">
           <div className="inline-flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 px-4 py-2 rounded-full">
             <Info className="w-4 h-4" />
-            Connect to Supabase to enable data persistence and real-time updates
+            Connect to Firebase to enable data persistence and real-time updates
           </div>
         </div>
       </div>
