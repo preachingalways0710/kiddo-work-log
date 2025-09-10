@@ -8,6 +8,8 @@ import { Clock, CheckCircle, PlayCircle, PauseCircle, ArrowLeft, UserCheck, User
 import { Link } from 'react-router-dom';
 import { jobsService, workSessionsService, attendanceService, Job, AttendanceRecord } from '@/services/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { HeaderTrackingBar } from '@/components/HeaderTrackingBar';
+import { UserCard } from '@/components/UserCard';
 
 const WorkerDashboard = () => {
   const [isWorking, setIsWorking] = useState(false);
@@ -19,6 +21,9 @@ const WorkerDashboard = () => {
   const [workerName, setWorkerName] = useState('');
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
+  const [presentCount, setPresentCount] = useState(3); // Mock data for tracking
+  const [helpersCount, setHelpersCount] = useState(1); // Mock data for tracking
+  const [searchFilter, setSearchFilter] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -124,6 +129,7 @@ const WorkerDashboard = () => {
       const newRecord = await attendanceService.getTodayRecord(workerName);
       setTodayAttendance(newRecord);
       setIsCheckedIn(true);
+      setPresentCount(prev => prev + 1); // Update present count
       
       toast({
         title: isLate ? "Checked in (Late)" : "Checked in",
@@ -157,6 +163,7 @@ const WorkerDashboard = () => {
       const updatedRecord = await attendanceService.getTodayRecord(workerName);
       setTodayAttendance(updatedRecord);
       setIsCheckedIn(false);
+      setPresentCount(prev => Math.max(0, prev - 1)); // Update present count
       
       toast({
         title: isEarly ? "Checked out (Early)" : "Checked out",
@@ -252,7 +259,7 @@ const WorkerDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background p-4">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
           <Link to="/">
             <Button variant="outline" size="sm">
@@ -266,78 +273,118 @@ const WorkerDashboard = () => {
           </div>
         </div>
 
-        {/* Check-in/Check-out Section */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {isCheckedIn ? (
-                <UserCheck className="w-5 h-5 text-success" />
-              ) : (
-                <UserX className="w-5 h-5 text-muted-foreground" />
-              )}
-              Daily Attendance
-            </CardTitle>
-            <CardDescription>
-              Work hours: 4:00 PM - 6:00 PM
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!isCheckedIn && (
-              <div>
-                <label className="text-sm font-medium">Your Name</label>
-                <Input
-                  value={workerName}
-                  onChange={(e) => setWorkerName(e.target.value)}
-                  placeholder="Enter your name"
-                  className="mt-1"
-                />
-              </div>
-            )}
-            
-            <div className="flex items-center justify-between">
-              <div>
-                {todayAttendance?.check_in_time && (
-                  <p className="text-sm text-muted-foreground">
-                    Checked in: {todayAttendance.check_in_time.toLocaleTimeString()}
-                    {todayAttendance.is_late_check_in && (
-                      <Badge variant="destructive" className="ml-2">Late</Badge>
+        {/* Header Tracking Bar */}
+        <HeaderTrackingBar
+          presentCount={presentCount}
+          helpersCount={helpersCount}
+          onSearchChange={setSearchFilter}
+        />
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Left Column - User Card */}
+          <div className="lg:col-span-1">
+            <UserCard
+              name={workerName || "Usuário"}
+              starCount={42}
+              isPresent={isCheckedIn}
+              guestCount={2}
+              shopBalance={250}
+              onEditProfile={() => {
+                toast({
+                  title: "Editar Perfil",
+                  description: "Funcionalidade de edição será implementada em breve"
+                });
+              }}
+              onTogglePresence={isCheckedIn ? handleCheckOut : handleCheckIn}
+              onAddGuest={() => {
+                toast({
+                  title: "Adicionar Convidado",
+                  description: "Funcionalidade será implementada em breve"
+                });
+              }}
+              onShopAction={() => {
+                toast({
+                  title: "Loja",
+                  description: "Funcionalidade da loja será implementada em breve"
+                });
+              }}
+            />
+          </div>
+
+          {/* Right Column - Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Check-in/Check-out Section */}
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  {isCheckedIn ? (
+                    <UserCheck className="w-5 h-5 text-success" />
+                  ) : (
+                    <UserX className="w-5 h-5 text-muted-foreground" />
+                  )}
+                  Daily Attendance
+                </CardTitle>
+                <CardDescription>
+                  Work hours: 4:00 PM - 6:00 PM
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {!isCheckedIn && (
+                  <div>
+                    <label className="text-sm font-medium">Your Name</label>
+                    <Input
+                      value={workerName}
+                      onChange={(e) => setWorkerName(e.target.value)}
+                      placeholder="Enter your name"
+                      className="mt-1"
+                    />
+                  </div>
+                )}
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    {todayAttendance?.check_in_time && (
+                      <p className="text-sm text-muted-foreground">
+                        Checked in: {todayAttendance.check_in_time.toLocaleTimeString()}
+                        {todayAttendance.is_late_check_in && (
+                          <Badge variant="destructive" className="ml-2">Late</Badge>
+                        )}
+                      </p>
                     )}
-                  </p>
-                )}
-                {todayAttendance?.check_out_time && (
-                  <p className="text-sm text-muted-foreground">
-                    Checked out: {todayAttendance.check_out_time.toLocaleTimeString()}
-                    {todayAttendance.is_early_check_out && (
-                      <Badge variant="destructive" className="ml-2">Early</Badge>
+                    {todayAttendance?.check_out_time && (
+                      <p className="text-sm text-muted-foreground">
+                        Checked out: {todayAttendance.check_out_time.toLocaleTimeString()}
+                        {todayAttendance.is_early_check_out && (
+                          <Badge variant="destructive" className="ml-2">Early</Badge>
+                        )}
+                      </p>
                     )}
-                  </p>
-                )}
-              </div>
-              
-              <div className="flex gap-2">
-                {!isCheckedIn ? (
-                  <Button
-                    onClick={handleCheckIn}
-                    disabled={!workerName.trim() || !!todayAttendance?.check_out_time}
-                    className="bg-gradient-to-r from-success to-success/80"
-                  >
-                    <UserCheck className="w-4 h-4 mr-2" />
-                    Check In
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleCheckOut}
-                    variant="outline"
-                    className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                  >
-                    <UserX className="w-4 h-4 mr-2" />
-                    Check Out
-                  </Button>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    {!isCheckedIn ? (
+                      <Button
+                        onClick={handleCheckIn}
+                        disabled={!workerName.trim() || !!todayAttendance?.check_out_time}
+                        className="bg-gradient-to-r from-success to-success/80"
+                      >
+                        <UserCheck className="w-4 h-4 mr-2" />
+                        Check In
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={handleCheckOut}
+                        variant="outline"
+                        className="border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      >
+                        <UserX className="w-4 h-4 mr-2" />
+                        Check Out
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
         {isWorking ? (
           <div className="space-y-6">
@@ -422,7 +469,13 @@ const WorkerDashboard = () => {
                       <p className="text-muted-foreground">No jobs available right now.</p>
                     </div>
                   ) : (
-                    availableJobs.map((job) => (
+                    availableJobs
+                      .filter(job => 
+                        searchFilter === '' || 
+                        job.title.toLowerCase().includes(searchFilter.toLowerCase()) ||
+                        job.description?.toLowerCase().includes(searchFilter.toLowerCase())
+                      )
+                      .map((job) => (
                       <Card key={job.id} className="relative">
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between">
@@ -468,6 +521,8 @@ const WorkerDashboard = () => {
             </Card>
           </div>
         )}
+          </div>
+        </div>
       </div>
     </div>
   );
