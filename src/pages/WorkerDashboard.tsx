@@ -352,18 +352,12 @@ const WorkerDashboard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!workerName && (
+            {!isCheckedIn && (
               <div>
                 <label className="text-sm font-medium">Your Name</label>
                 <Input
                   value={workerName}
-                  onChange={(e) => {
-                    try {
-                      setWorkerName(e.target.value);
-                    } catch (error) {
-                      console.error('Error updating worker name:', error);
-                    }
-                  }}
+                  onChange={(e) => setWorkerName(e.target.value)}
                   placeholder="Enter your name"
                   className="mt-1"
                 />
