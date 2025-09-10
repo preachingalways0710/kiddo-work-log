@@ -153,7 +153,7 @@ const ParentDashboard = () => {
         </div>
 
         {/* Stats Overview */}
-        {(workSessions.length > 0 || attendanceRecords.length > 0) && (
+        {(workSessions.length > 0 && attendanceRecords.length > 0) && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -210,7 +210,7 @@ const ParentDashboard = () => {
         )}
 
         {/* Punctuality Tracking */}
-        {stats.lateCheckIns + stats.earlyCheckOuts > 0 && (
+        {attendanceRecords.length > 0 && stats.lateCheckIns + stats.earlyCheckOuts > 0 && (
           <Card className="mb-6 border-warning bg-warning/5">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-warning">
