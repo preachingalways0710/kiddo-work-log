@@ -4,19 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Clock, Edit, Trash2, GripVertical, Archive } from 'lucide-react';
-
-interface Job {
-  id: string;
-  title: string;
-  description: string | null;
-  estimated_time: number;
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'high' | 'medium' | 'low';
-  assigned_days: string[];
-  created_at: string;
-  category: 'active' | 'later';
-  display_order: number;
-}
+import { Job } from '@/services/firebase';
 
 interface SortableJobItemProps {
   job: Job;
@@ -75,7 +63,7 @@ export const SortableJobItem = ({
                 </Badge>
               </div>
               <p className="text-muted-foreground">{job.description || 'No description provided'}</p>
-              {job.assigned_days.length > 0 && (
+              {job.assigned_days && job.assigned_days.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {job.assigned_days.map((day) => (
                     <Badge key={day} variant="outline" className="text-xs">

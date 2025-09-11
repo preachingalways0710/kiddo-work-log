@@ -1,43 +1,29 @@
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  getDocs, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy, 
-  limit,
-  Timestamp,
-  DocumentData
-} from "firebase/firestore";
-import { db } from "../firebase.js";
+import { supabase } from "@/integrations/supabase/client";
 
-// Job interface
+// Job interface matching the Supabase schema
 export interface Job {
   id: string;
   title: string;
-  description?: string;
+  description?: string | null;
   estimated_time: number;
   status: 'pending' | 'in_progress' | 'completed';
   priority: 'low' | 'medium' | 'high';
-  assigned_days?: string[];
-  category?: 'active' | 'later';
-  display_order?: number;
-  created_at?: string;
-  updated_at?: string;
+  assigned_days?: string[] | null;
+  category?: 'active' | 'later' | null;
+  display_order?: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // Work session interface
 export interface WorkSession {
   id?: string;
-  job_id?: string;
+  job_id?: string | null;
   job_title: string;
   start_time: Date;
-  end_time?: Date;
-  duration?: number;
-  description?: string;
+  end_time?: Date | null;
+  duration?: number | null;
+  description?: string | null;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -46,11 +32,11 @@ export interface WorkSession {
 export interface AttendanceRecord {
   id?: string;
   worker_name: string;
-  check_in_time?: Date;
-  check_out_time?: Date;
+  check_in_time?: Date | null;
+  check_out_time?: Date | null;
   date: Date;
-  is_late_check_in?: boolean;
-  is_early_check_out?: boolean;
+  is_late_check_in?: boolean | null;
+  is_early_check_out?: boolean | null;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -58,162 +44,170 @@ export interface AttendanceRecord {
 // Jobs service
 export const jobsService = {
   async getAll(): Promise<Job[]> {
-    const querySnapshot = await getDocs(collection(db, "jobs"));
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      created_at: doc.data().created_at?.toDate()?.toISOString(),
-      updated_at: doc.data().updated_at?.toDate()?.toISOString()
-    } as Job));
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data || [];
   },
 
   async getActive(): Promise<Job[]> {
-    const q = query(
-      collection(db, "jobs"),
-      where("status", "==", "pending"),
-      where("category", "==", "active"),
-      orderBy("display_order", "asc")
-    );
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      created_at: doc.data().created_at?.toDate(),
-      updated_at: doc.data().updated_at?.toDate()
-    } as Job));
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('*')
+      .eq('status', 'pending')
+      .eq('category', 'active')
+      .order('display_order', { ascending: true });
+    
+    if (error) throw error;
+    return data || [];
   },
 
-  async create(job: Omit<Job, 'id'>): Promise<string> {
-    const now = Timestamp.now();
-    const docRef = await addDoc(collection(db, "jobs"), {
-      ...job,
-      created_at: now,
-      updated_at: now
-    });
-    return docRef.id;
+  async create(job: Omit<Job, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
+    const { data, error } = await supabase
+      .from('jobs')
+      .insert(job)
+      .select('id')
+      .single();
+    
+    if (error) throw error;
+    return data.id;
   },
 
   async update(id: string, updates: Partial<Job>): Promise<void> {
-    const jobRef = doc(db, "jobs", id);
-    await updateDoc(jobRef, {
-      ...updates,
-      updated_at: Timestamp.now()
-    });
+    const { error } = await supabase
+      .from('jobs')
+      .update(updates)
+      .eq('id', id);
+    
+    if (error) throw error;
   },
 
   async delete(id: string): Promise<void> {
-    await deleteDoc(doc(db, "jobs", id));
+    const { error } = await supabase
+      .from('jobs')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
   }
 };
 
 // Work sessions service
 export const workSessionsService = {
   async getRecent(limitCount: number = 10): Promise<WorkSession[]> {
-    const q = query(
-      collection(db, "work_sessions"),
-      orderBy("created_at", "desc"),
-      limit(limitCount)
-    );
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      start_time: doc.data().start_time?.toDate(),
-      end_time: doc.data().end_time?.toDate(),
-      created_at: doc.data().created_at?.toDate(),
-      updated_at: doc.data().updated_at?.toDate()
-    } as WorkSession));
+    const { data, error } = await supabase
+      .from('work_sessions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limitCount);
+    
+    if (error) throw error;
+    
+    return (data || []).map(session => ({
+      ...session,
+      start_time: new Date(session.start_time),
+      end_time: session.end_time ? new Date(session.end_time) : null,
+      created_at: session.created_at ? new Date(session.created_at) : undefined,
+      updated_at: session.updated_at ? new Date(session.updated_at) : undefined
+    }));
   },
 
-  async create(session: Omit<WorkSession, 'id'>): Promise<string> {
-    const now = Timestamp.now();
-    const docRef = await addDoc(collection(db, "work_sessions"), {
-      ...session,
-      start_time: Timestamp.fromDate(session.start_time),
-      end_time: session.end_time ? Timestamp.fromDate(session.end_time) : null,
-      created_at: now,
-      updated_at: now
-    });
-    return docRef.id;
+  async create(session: Omit<WorkSession, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
+    const { data, error } = await supabase
+      .from('work_sessions')
+      .insert({
+        ...session,
+        start_time: session.start_time.toISOString(),
+        end_time: session.end_time ? session.end_time.toISOString() : null
+      })
+      .select('id')
+      .single();
+    
+    if (error) throw error;
+    return data.id;
   }
 };
 
 // Attendance service
 export const attendanceService = {
   async getTodayRecord(workerName: string): Promise<AttendanceRecord | null> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const q = query(
-      collection(db, "attendance"),
-      where("worker_name", "==", workerName),
-      where("date", ">=", Timestamp.fromDate(today)),
-      where("date", "<", Timestamp.fromDate(tomorrow))
-    );
+    const today = new Date().toISOString().split('T')[0];
     
-    const querySnapshot = await getDocs(q);
-    if (querySnapshot.empty) return null;
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('worker_name', workerName)
+      .eq('date', today)
+      .maybeSingle();
     
-    const doc = querySnapshot.docs[0];
+    if (error) throw error;
+    
+    if (!data) return null;
+    
     return {
-      id: doc.id,
-      ...doc.data(),
-      date: doc.data().date?.toDate(),
-      check_in_time: doc.data().check_in_time?.toDate(),
-      check_out_time: doc.data().check_out_time?.toDate(),
-      created_at: doc.data().created_at?.toDate(),
-      updated_at: doc.data().updated_at?.toDate()
-    } as AttendanceRecord;
+      ...data,
+      date: new Date(data.date),
+      check_in_time: data.check_in_time ? new Date(data.check_in_time) : null,
+      check_out_time: data.check_out_time ? new Date(data.check_out_time) : null,
+      created_at: data.created_at ? new Date(data.created_at) : undefined,
+      updated_at: data.updated_at ? new Date(data.updated_at) : undefined
+    };
   },
 
   async getRecent(limitCount: number = 10): Promise<AttendanceRecord[]> {
-    const q = query(
-      collection(db, "attendance"),
-      orderBy("date", "desc"),
-      limit(limitCount)
-    );
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      date: doc.data().date?.toDate(),
-      check_in_time: doc.data().check_in_time?.toDate(),
-      check_out_time: doc.data().check_out_time?.toDate(),
-      created_at: doc.data().created_at?.toDate(),
-      updated_at: doc.data().updated_at?.toDate()
-    } as AttendanceRecord));
+    const { data, error } = await supabase
+      .from('attendance')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(limitCount);
+    
+    if (error) throw error;
+    
+    return (data || []).map(record => ({
+      ...record,
+      date: new Date(record.date),
+      check_in_time: record.check_in_time ? new Date(record.check_in_time) : null,
+      check_out_time: record.check_out_time ? new Date(record.check_out_time) : null,
+      created_at: record.created_at ? new Date(record.created_at) : undefined,
+      updated_at: record.updated_at ? new Date(record.updated_at) : undefined
+    }));
   },
 
-  async create(record: Omit<AttendanceRecord, 'id'>): Promise<string> {
-    const now = Timestamp.now();
-    const docRef = await addDoc(collection(db, "attendance"), {
-      ...record,
-      date: Timestamp.fromDate(record.date),
-      check_in_time: record.check_in_time ? Timestamp.fromDate(record.check_in_time) : null,
-      check_out_time: record.check_out_time ? Timestamp.fromDate(record.check_out_time) : null,
-      created_at: now,
-      updated_at: now
-    });
-    return docRef.id;
+  async create(record: Omit<AttendanceRecord, 'id' | 'created_at' | 'updated_at'>): Promise<string> {
+    const { data, error } = await supabase
+      .from('attendance')
+      .insert({
+        ...record,
+        date: record.date.toISOString().split('T')[0],
+        check_in_time: record.check_in_time ? record.check_in_time.toISOString() : null,
+        check_out_time: record.check_out_time ? record.check_out_time.toISOString() : null
+      })
+      .select('id')
+      .single();
+    
+    if (error) throw error;
+    return data.id;
   },
 
   async update(id: string, updates: Partial<AttendanceRecord>): Promise<void> {
-    const attendanceRef = doc(db, "attendance", id);
-    const updateData: any = {
-      ...updates,
-      updated_at: Timestamp.now()
-    };
+    const updateData: any = { ...updates };
     
-    // Convert dates to Timestamps if present
+    // Convert dates to ISO strings if present
     if (updates.check_in_time) {
-      updateData.check_in_time = Timestamp.fromDate(updates.check_in_time);
+      updateData.check_in_time = updates.check_in_time.toISOString();
     }
     if (updates.check_out_time) {
-      updateData.check_out_time = Timestamp.fromDate(updates.check_out_time);
+      updateData.check_out_time = updates.check_out_time.toISOString();
     }
     
-    await updateDoc(attendanceRef, updateData);
+    const { error } = await supabase
+      .from('attendance')
+      .update(updateData)
+      .eq('id', id);
+    
+    if (error) throw error;
   }
 };
