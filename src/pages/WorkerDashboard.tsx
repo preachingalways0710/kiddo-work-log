@@ -298,7 +298,7 @@ const WorkerDashboard = () => {
               <div>
                 {todayAttendance?.check_in_time && (
                   <p className="text-sm text-muted-foreground">
-                    Checked in: {todayAttendance.check_in_time.toLocaleTimeString()}
+                    <span className="font-medium">{todayAttendance.worker_name}</span> checked in: {todayAttendance.check_in_time.toLocaleTimeString()}
                     {todayAttendance.is_late_check_in && (
                       <Badge variant="destructive" className="ml-2">Late</Badge>
                     )}
@@ -306,7 +306,7 @@ const WorkerDashboard = () => {
                 )}
                 {todayAttendance?.check_out_time && (
                   <p className="text-sm text-muted-foreground">
-                    Checked out: {todayAttendance.check_out_time.toLocaleTimeString()}
+                    <span className="font-medium">{todayAttendance.worker_name}</span> checked out: {todayAttendance.check_out_time.toLocaleTimeString()}
                     {todayAttendance.is_early_check_out && (
                       <Badge variant="destructive" className="ml-2">Early</Badge>
                     )}
