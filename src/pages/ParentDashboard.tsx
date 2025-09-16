@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Clock, CheckCircle, User, Calendar, TrendingUp, AlertTriangle, UserCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { workSessionsService, attendanceService, WorkSession, AttendanceRecord } from '@/services/firebase';
+import { workSessionsService, attendanceService, WorkSession, AttendanceRecord } from '@/services/database';
 
 const ParentDashboard = () => {
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);

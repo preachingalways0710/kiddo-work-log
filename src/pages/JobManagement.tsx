@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowLeft, Plus, Clock, Trash2, Edit, AlertCircle, Archive } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { jobsService, Job } from '@/services/firebase';
+import { jobsService, Job } from '@/services/database';
 import { useToast } from '@/hooks/use-toast';
 import {
   DndContext,

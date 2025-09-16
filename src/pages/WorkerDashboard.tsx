@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Clock, CheckCircle, PlayCircle, PauseCircle, ArrowLeft, UserCheck, UserX } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { jobsService, workSessionsService, attendanceService, Job, AttendanceRecord } from '@/services/firebase';
+import { jobsService, workSessionsService, attendanceService, Job, AttendanceRecord } from '@/services/database';
 import { useToast } from '@/hooks/use-toast';
 
 const WorkerDashboard = () => {

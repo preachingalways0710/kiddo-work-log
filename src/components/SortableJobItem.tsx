@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Clock, Edit, Trash2, GripVertical, Archive } from 'lucide-react';
-import { Job } from '@/services/firebase';
+import { Job } from '@/services/database';
 
 interface SortableJobItemProps {
   job: Job;
