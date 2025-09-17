@@ -35,7 +35,23 @@ const WorkerDashboard = () => {
   const checkTodayAttendance = async () => {
     try {
       const savedName = localStorage.getItem('workerName') || 'Worker';
-      const data = await attendanceService.getTodayRecord(savedName);
+      
+      // First check today's record
+      let data = await attendanceService.getTodayRecord(savedName);
+      
+      // If no today record, check if there's an incomplete record from previous days
+      if (!data) {
+        const recentRecords = await attendanceService.getRecent(7);
+        const incompleteRecord = recentRecords?.find(record => 
+          record.worker_name === savedName && 
+          record.check_in_time && 
+          !record.check_out_time
+        );
+        
+        if (incompleteRecord) {
+          data = incompleteRecord;
+        }
+      }
       
       if (data) {
         setTodayAttendance(data);

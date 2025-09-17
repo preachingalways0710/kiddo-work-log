@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import WorkerDashboard from "./pages/WorkerDashboard";
 import ParentDashboard from "./pages/ParentDashboard";
 import JobManagement from "./pages/JobManagement";
+import AttendanceAdmin from "./pages/AttendanceAdmin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/worker" element={<WorkerDashboard />} />
           <Route path="/parent" element={<ParentDashboard />} />
           <Route path="/jobs" element={<JobManagement />} />
+          <Route path="/attendance-admin" element={<AttendanceAdmin />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

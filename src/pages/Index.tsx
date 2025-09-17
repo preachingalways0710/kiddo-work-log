@@ -1,7 +1,7 @@
 // Update this page (the content is just a fallback if you fail to update the page)
 
 import { Link } from 'react-router-dom';
-import { Clock, BarChart3, Briefcase, Info } from 'lucide-react';
+import { Clock, BarChart3, Briefcase, Settings } from 'lucide-react';
 
 const Index = () => {
   return (
@@ -16,7 +16,7 @@ const Index = () => {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
           <Link 
             to="/worker" 
             className="group block p-6 bg-card rounded-lg border hover:shadow-lg transition-all duration-300 hover:scale-105"
@@ -58,6 +58,21 @@ const Index = () => {
               <h3 className="text-xl font-semibold mb-2">Manage Jobs</h3>
               <p className="text-muted-foreground">
                 Create, edit, and organize available work assignments
+              </p>
+            </div>
+          </Link>
+
+          <Link 
+            to="/attendance-admin" 
+            className="group block p-6 bg-card rounded-lg border hover:shadow-lg transition-all duration-300 hover:scale-105"
+          >
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4 bg-warning/10 rounded-full flex items-center justify-center group-hover:bg-warning/20 transition-colors">
+                <Settings className="w-8 h-8 text-warning" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Attendance Admin</h3>
+              <p className="text-muted-foreground">
+                Edit attendance times and manage check-in/out records
               </p>
             </div>
           </Link>
