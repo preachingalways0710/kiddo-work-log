@@ -167,7 +167,23 @@ const WorkerDashboard = () => {
   };
 
   const handleCheckOut = async () => {
-    if (!todayAttendance || !isCheckedIn) return;
+    if (!todayAttendance) {
+      toast({
+        title: "Error",
+        description: "No attendance record found for today",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!isCheckedIn) {
+      toast({
+        title: "Error", 
+        description: "You have already checked out today or haven't checked in yet",
+        variant: "destructive"
+      });
+      return;
+    }
 
     try {
       const now = new Date();
