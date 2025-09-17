@@ -337,7 +337,7 @@ const WorkerDashboard = () => {
             )}
             
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex-1">
                 {todayAttendance?.check_in_time && (
                   <p className="text-sm text-muted-foreground">
                     <span className="font-medium">{todayAttendance.worker_name}</span> checked in: {todayAttendance.check_in_time.toLocaleTimeString()}
@@ -353,6 +353,15 @@ const WorkerDashboard = () => {
                       <Badge variant="destructive" className="ml-2">Early</Badge>
                     )}
                   </p>
+                )}
+                {todayAttendance && (
+                  <div className="mt-2">
+                    <Link to="/attendance-admin">
+                      <Button variant="outline" size="sm">
+                        Edit Attendance
+                      </Button>
+                    </Link>
+                  </div>
                 )}
               </div>
               
