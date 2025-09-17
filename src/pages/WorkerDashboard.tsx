@@ -124,6 +124,16 @@ const WorkerDashboard = () => {
       return;
     }
 
+    // Check if worker already has a record for today
+    if (todayAttendance) {
+      toast({
+        title: "Error",
+        description: "You have already checked in today. Please contact admin to make changes.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       const now = new Date();
       const isLate = now.getHours() > 16; // After 4 PM
@@ -150,7 +160,7 @@ const WorkerDashboard = () => {
       console.error('Error checking in:', error);
       toast({
         title: "Error",
-        description: "Failed to check in",
+        description: "Failed to check in. You may have already checked in today.",
         variant: "destructive"
       });
     }
