@@ -52,11 +52,10 @@ const ParentDashboard = () => {
 
   const calculateStats = () => {
     const now = new Date();
-    const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
-    weekStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
 
     const thisWeekSessions = workSessions.filter(session => 
-      session.start_time >= weekStart
+      new Date(session.start_time) >= weekStart
     );
 
     const totalMinutes = thisWeekSessions.reduce((sum, session) => 
@@ -66,10 +65,12 @@ const ParentDashboard = () => {
     const completedJobs = thisWeekSessions.length;
     const avgMinutes = completedJobs > 0 ? Math.round(totalMinutes / completedJobs) : 0;
 
-    // Calculate punctuality stats
-    const thisWeekAttendance = attendanceRecords.filter(record => 
-      record.date >= weekStart
-    );
+    // Calculate punctuality stats - use recent records instead of just this week
+    const recentAttendance = attendanceRecords.slice(0, 7); // Last 7 records
+    const thisWeekAttendance = recentAttendance.filter(record => {
+      const recordDate = new Date(record.date);
+      return recordDate >= weekStart;
+    });
 
     const lateCheckIns = thisWeekAttendance.filter(record => record.is_late_check_in).length;
     const earlyCheckOuts = thisWeekAttendance.filter(record => record.is_early_check_out).length;

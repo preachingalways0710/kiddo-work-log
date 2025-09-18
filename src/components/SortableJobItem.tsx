@@ -3,7 +3,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Clock, Edit, Trash2, GripVertical, Archive } from 'lucide-react';
+import { Clock, Edit, Trash2, GripVertical, Archive, PlayCircle } from 'lucide-react';
 import { Job } from '@/services/database';
 
 interface SortableJobItemProps {
@@ -14,6 +14,9 @@ interface SortableJobItemProps {
   formatMinutesToTime: (minutes: number) => string;
   getStatusColor: (status: Job['status']) => string;
   getPriorityColor: (priority: Job['priority']) => string;
+  onStartJob?: () => void;
+  isWorkerDashboard?: boolean;
+  isCheckedIn?: boolean;
 }
 
 export const SortableJobItem = ({
@@ -23,7 +26,10 @@ export const SortableJobItem = ({
   onToggleCategory,
   formatMinutesToTime,
   getStatusColor,
-  getPriorityColor
+  getPriorityColor,
+  onStartJob,
+  isWorkerDashboard = false,
+  isCheckedIn = false
 }: SortableJobItemProps) => {
   const {
     attributes,
@@ -81,31 +87,44 @@ export const SortableJobItem = ({
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onToggleCategory(job.id, job.category === 'active' ? 'later' : 'active')}
-              title={job.category === 'active' ? 'Move to Later' : 'Move to Active'}
-            >
-              <Archive className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onEdit(job)}
-            >
-              <Edit className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onDelete(job.id)}
-              className="text-destructive hover:text-destructive"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
+          {isWorkerDashboard ? (
+            <div className="flex gap-2">
+              <Button
+                onClick={onStartJob}
+                disabled={!isCheckedIn}
+                className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
+              >
+                <PlayCircle className="w-4 h-4 mr-2" />
+                Start Job
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onToggleCategory(job.id, job.category === 'active' ? 'later' : 'active')}
+                title={job.category === 'active' ? 'Move to Later' : 'Move to Active'}
+              >
+                <Archive className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onEdit(job)}
+              >
+                <Edit className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onDelete(job.id)}
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

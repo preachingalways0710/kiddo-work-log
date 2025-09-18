@@ -8,6 +8,9 @@ import { Clock, CheckCircle, PlayCircle, PauseCircle, ArrowLeft, UserCheck, User
 import { Link } from 'react-router-dom';
 import { jobsService, workSessionsService, attendanceService, Job, AttendanceRecord } from '@/services/database';
 import { useToast } from '@/hooks/use-toast';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { SortableJobItem } from '@/components/SortableJobItem';
 
 const WorkerDashboard = () => {
   const [isWorking, setIsWorking] = useState(false);
@@ -20,6 +23,13 @@ const WorkerDashboard = () => {
   const [isCheckedIn, setIsCheckedIn] = useState(false);
   const [todayAttendance, setTodayAttendance] = useState<AttendanceRecord | null>(null);
   const { toast } = useToast();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     fetchAvailableJobs();
@@ -292,6 +302,30 @@ const WorkerDashboard = () => {
     }
   };
 
+  const handleDragEnd = (event: any) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      const oldIndex = availableJobs.findIndex(job => job.id === active.id);
+      const newIndex = availableJobs.findIndex(job => job.id === over.id);
+      
+      setAvailableJobs(arrayMove(availableJobs, oldIndex, newIndex));
+    }
+  };
+
+  const getStatusColor = (status: Job['status']) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-success/10 text-success border-success/20';
+      case 'in_progress':
+        return 'bg-warning/10 text-warning border-warning/20';
+      case 'pending':
+        return 'bg-muted/10 text-muted-foreground border-muted/20';
+      default:
+        return 'bg-muted text-muted-foreground';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-4xl mx-auto">
@@ -463,58 +497,41 @@ const WorkerDashboard = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid gap-4">
-                  {loading ? (
-                    <div className="text-center py-8">
-                      <p className="text-muted-foreground">Loading available jobs...</p>
-                    </div>
-                  ) : availableJobs.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-muted-foreground">No jobs available right now.</p>
-                    </div>
-                  ) : (
-                    availableJobs.map((job) => (
-                      <Card key={job.id} className="relative">
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-semibold text-lg">{job.title}</h3>
-                                <Badge className={getPriorityColor(job.priority)}>
-                                  {job.priority} priority
-                                </Badge>
-                              </div>
-                              <p className="text-muted-foreground mb-3">{job.description || 'No description provided'}</p>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="secondary">
-                                  <Clock className="w-3 h-3 mr-1" />
-                                  {formatMinutesToTime(job.estimated_time)}
-                                </Badge>
-                                {job.assigned_days && job.assigned_days.length > 0 && (
-                                  <div className="flex flex-wrap gap-1">
-                                    {job.assigned_days.map((day) => (
-                                      <Badge key={day} variant="outline" className="text-xs">
-                                        {day.slice(0, 3)}
-                                      </Badge>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <Button
-                              onClick={() => handleStartJob(job)}
-                              disabled={!isCheckedIn}
-                              className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
-                            >
-                              <PlayCircle className="w-4 h-4 mr-2" />
-                              Start Job
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
+                {loading ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">Loading available jobs...</p>
+                  </div>
+                ) : availableJobs.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">No jobs available right now.</p>
+                  </div>
+                ) : (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext items={availableJobs.map(job => job.id!)} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-4">
+                        {availableJobs.map((job) => (
+                          <SortableJobItem
+                            key={job.id}
+                            job={job}
+                            onEdit={() => {}} // Not needed for worker dashboard
+                            onDelete={() => {}} // Not needed for worker dashboard
+                            onToggleCategory={() => {}} // Not needed for worker dashboard
+                            formatMinutesToTime={formatMinutesToTime}
+                            getPriorityColor={getPriorityColor}
+                            getStatusColor={getStatusColor}
+                            onStartJob={() => handleStartJob(job)}
+                            isWorkerDashboard={true}
+                            isCheckedIn={isCheckedIn}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                )}
               </CardContent>
             </Card>
           </div>
